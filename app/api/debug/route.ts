@@ -12,4 +12,3 @@ export async function GET() {
     message: "This endpoint helps debug the server-side global state",
   })
 }
-

@@ -27,4 +27,3 @@ export interface ReportData {
   asphaltTrucks: TruckEntry[] // Added new category for asphalt trucks
   mixers?: TruckEntry[]
 }
-

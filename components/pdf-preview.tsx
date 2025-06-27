@@ -107,4 +107,3 @@ export function PDFPreview({ reportData }: PDFPreviewProps) {
     </Card>
   )
 }
-

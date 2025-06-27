@@ -233,7 +233,7 @@ function processDataRows(data: any[]): ReportData {
           date: formattedDate,
           quantity: row["QTY REQ'D (short text)"] || "",
           materials: row["Material Type (short text)"] || "",
-          location: row["LOCATION (short text)"] || "",
+          location: row["Location (short text)"] || row["LOCATION (short text)"] || "",
           accountNumber: row["🫀 Account # (short text)"] || "",
           pit: pitLocation,
           delivered: row["TOTAL # (formula)"] || "",
@@ -852,4 +852,3 @@ async function debugGlobalState(): Promise<{
 }
 
 export { processClickUpCsv, generatePdf, exportReportToGithub, debugGlobalState, getReportData }
-

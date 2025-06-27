@@ -31,4 +31,3 @@ export function removeFromLocalStorage(key: string): void {
     console.error(`Error removing from localStorage:`, error)
   }
 }
-

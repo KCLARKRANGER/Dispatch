@@ -241,4 +241,3 @@ export function EditableReport({ reportData, onSave }: EditableReportProps) {
     </Card>
   )
 }
-
