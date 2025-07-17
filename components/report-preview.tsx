@@ -23,29 +23,29 @@ export function ReportPreview() {
   useEffect(() => {
     setIsLoading(true)
     try {
+      console.log("ReportPreview: Attempting to load data from localStorage")
       // Try to get data from localStorage
       const storedData = localStorage.getItem("reportData")
+      console.log("ReportPreview: Raw localStorage data:", storedData ? "Found data" : "No data found")
+
       if (storedData) {
         const parsedData = JSON.parse(storedData) as ReportData
-        console.log(
-          "Loaded data from localStorage:",
-          parsedData.dumpTrucks?.length || 0,
-          "dump trucks,",
-          parsedData.slingers?.length || 0,
-          "slingers,",
-          parsedData.tractors?.length || 0,
-          "tractors,",
-          parsedData.asphaltTrucks?.length || 0,
-          "asphalt trucks,",
-          parsedData.mixers?.length || 0,
-          "mixers",
-        )
+        console.log("ReportPreview: Parsed data successfully")
+        console.log("ReportPreview: Data summary:", {
+          date: parsedData.date,
+          totalEntries: parsedData.totalEntries,
+          slingers: parsedData.slingers?.length || 0,
+          dumpTrucks: parsedData.dumpTrucks?.length || 0,
+          tractors: parsedData.tractors?.length || 0,
+          asphaltTrucks: parsedData.asphaltTrucks?.length || 0,
+          mixers: parsedData.mixers?.length || 0,
+        })
         setReportData(parsedData)
       } else {
-        console.log("No data found in localStorage")
+        console.log("ReportPreview: No data found in localStorage")
       }
     } catch (error) {
-      console.error("Error loading data from localStorage:", error)
+      console.error("ReportPreview: Error loading data from localStorage:", error)
       setFetchError("Failed to load report data from browser storage")
     } finally {
       setIsLoading(false)

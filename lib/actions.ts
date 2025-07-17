@@ -35,18 +35,56 @@ function processDataRows(data: any[]): ReportData {
     console.log("Available columns:", Object.keys(data[0]).join(", "))
   }
 
+  // Define the conditional offset driver set
+  const applyOffsetTo = new Set([
+    "MMH02",
+    "MMH06",
+    "SMI33",
+    "SMI36",
+    "SMI38",
+    "SMI40",
+    "SMI41",
+    "SMI42",
+    "SMI43",
+    "SMI43P",
+    "SMI46",
+    "SMI48",
+    "SMI48P",
+    "SMI49P",
+    "SMI50",
+    "SMI50P",
+    "SMI51",
+    "MIXER DRIVER",
+    "SMI92",
+    "SMI94",
+    "SMI94S",
+    "SMI95",
+    "SMI95S",
+    "SMI96",
+    "SMI96S",
+    "SMI97",
+    "SMI97S",
+    "SMI106",
+    "SMI107",
+    "SMI108",
+    "SMI110",
+    "SMI111",
+    "SMI112",
+    "SMI114",
+    "FIRST-RETURNING",
+  ])
+
   // Group entries by truck type
   const slingers: TruckEntry[] = []
   const dumpTrucks: TruckEntry[] = []
   const tractors: TruckEntry[] = []
-  const asphaltTrucks: TruckEntry[] = [] // Added new array for asphalt trucks
+  const asphaltTrucks: TruckEntry[] = []
   const mixers: TruckEntry[] = []
 
-  // Extract the report date from the first row's Due Date (column F)
+  // Extract the report date from the first row's Due Date
   let reportDate = new Date().toLocaleDateString()
   if (data.length > 0) {
     try {
-      // First, make sure we have a valid Due Date field
       const dateString = data[0]["Due Date"]
       console.log("Attempting to parse date from:", dateString)
 
@@ -82,50 +120,61 @@ function processDataRows(data: any[]): ReportData {
   data.forEach((row, index) => {
     console.log(`Processing row ${index + 1}/${data.length}: ${row["Task Name"] || "Unnamed Task"}`)
 
-    // Update the truck number parsing to be more robust:
+    // Parse driver information from both possible columns
+    const driversLabels = row["Drivers Assigned (labels)"] || ""
+    const driversText = row["Drivers Assigned (short text)"] || ""
+    const driversField = driversLabels || driversText
 
-    // Extract driver information from the "Drivers Assigned" field
-    // It comes in format like "[SMI49, SMI50P, MMH06]"
     let truckNumbers: string[] = []
-    if (row["Drivers Assigned (labels)"]) {
+    if (driversField) {
       try {
-        const driversText = String(row["Drivers Assigned (labels)"])
-        console.log(`Row ${index + 1} drivers raw value:`, driversText)
+        const driversString = String(driversField)
+        console.log(`Row ${index + 1} drivers raw value:`, driversString)
 
         // Check if it contains commas, suggesting multiple drivers
-        if (driversText.includes(",")) {
+        if (driversString.includes(",")) {
           // Remove brackets and get all drivers
-          const cleanDriversText = driversText.replace(/[[\]]/g, "").trim()
+          const cleanDriversText = driversString.replace(/[[\]]/g, "").trim()
           truckNumbers = cleanDriversText
             .split(",")
             .map((d: string) => d.trim())
             .filter(Boolean)
         } else {
           // Single driver, just clean it up
-          truckNumbers = [driversText.replace(/[[\]]/g, "").trim()]
+          truckNumbers = [driversString.replace(/[[\]]/g, "").trim()]
         }
 
         console.log(`Row ${index + 1} has ${truckNumbers.length} truck numbers:`, truckNumbers)
       } catch (e) {
         console.error(`Error parsing truck numbers for row ${index + 1}:`, e)
         // Default to the raw value if parsing fails
-        truckNumbers = [String(row["Drivers Assigned (labels)"])]
+        truckNumbers = [String(driversField)]
       }
     }
 
-    // If no truck numbers assigned, still create one entry with empty truck number
-    if (truckNumbers.length === 0) {
-      truckNumbers = [""]
-      console.log(`Row ${index + 1} has no truck numbers, using empty string`)
+    // Parse timing configuration from new columns
+    const minutesBefore = Number.parseInt(row["Minutes Before Shift (SHOWUPTIME) (number)"]) || 0
+    const intervalBetween = Number.parseInt(row["Interval Between Trucks (number)"]) || 0
+    const numberOfTrucks = Number.parseInt(row["Number of Trucks (number)"]) || 1
+
+    console.log(`Row ${index + 1} timing config:`, { minutesBefore, intervalBetween, numberOfTrucks })
+
+    // If no truck numbers assigned but numberOfTrucks > 0, create empty entries
+    if (truckNumbers.length === 0 && numberOfTrucks > 0) {
+      truckNumbers = Array(numberOfTrucks).fill("")
+      console.log(`Row ${index + 1} has no truck numbers, creating ${numberOfTrucks} empty entries`)
     }
 
-    // Update to use "Pit Location (labels)" instead of "Pit Location (drop down)"
-    // Extract pit locations from the "Pit Location (labels)" column
-    // It might come in format like "[SM-WB, SM-MM]"
-    let pitLocations: string[] = []
+    // If we have fewer truck numbers than numberOfTrucks, duplicate the last one
+    while (truckNumbers.length < numberOfTrucks) {
+      const lastTruck = truckNumbers[truckNumbers.length - 1] || ""
+      truckNumbers.push(lastTruck)
+      console.log(`Row ${index + 1} duplicating truck number to reach ${numberOfTrucks} entries`)
+    }
 
-    // Check both possible column names for pit locations
-    const pitLocationField = row["Pit Location (labels)"] || row["Pit Location (drop down)"]
+    // Parse pit locations
+    let pitLocations: string[] = []
+    const pitLocationField = row["Pit Location (labels)"]
 
     if (pitLocationField) {
       console.log(`Row ${index + 1} pit location raw value:`, pitLocationField)
@@ -159,66 +208,74 @@ function processDataRows(data: any[]): ReportData {
       console.log(`Row ${index + 1} has no pit location, using empty string`)
     }
 
-    // Parse the due date to get a readable date
+    // Parse the due date to get base time for calculations
+    let baseTime = new Date()
     let formattedDate = reportDate
-    let startTime = "N/A"
-    let loadTime = "N/A"
 
     if (row["Due Date"] && typeof row["Due Date"] === "string" && row["Due Date"].includes(",")) {
       try {
-        // Extract date part from format like "Wednesday, March 19th 2025, 7:00:00 am -04:00"
         const dateString = row["Due Date"]
+        console.log(`Row ${index + 1} parsing due date:`, dateString)
 
-        // Extract the month, day, and year using regex
-        const dateRegex = /(\w+), (\w+) (\d+)\w+ (\d{4})/
+        // Parse the full date string into a Date object
+        // Format: "Tuesday, July 15th 2025, 7:30:00 am -04:00"
+        const dateRegex = /(\w+), (\w+) (\d+)\w+ (\d{4}), (\d+):(\d+):(\d+) ([ap]m)/i
         const match = dateString.match(dateRegex)
 
         if (match) {
-          const [_, dayOfWeek, month, day, year] = match
-          // Create a properly formatted date string
-          const parsedDate = new Date(`${month} ${day}, ${year}`)
-          if (!isNaN(parsedDate.getTime())) {
-            formattedDate = parsedDate.toLocaleDateString()
-          } else {
-            console.error("Invalid date parsed:", `${month} ${day}, ${year}`)
+          const [_, dayOfWeek, month, day, year, hours, minutes, seconds, ampm] = match
+
+          // Create the base date
+          let hour = Number.parseInt(hours)
+          if (ampm.toLowerCase() === "pm" && hour !== 12) {
+            hour += 12
+          } else if (ampm.toLowerCase() === "am" && hour === 12) {
+            hour = 0
           }
+
+          baseTime = new Date(`${month} ${day}, ${year}`)
+          baseTime.setHours(hour, Number.parseInt(minutes), Number.parseInt(seconds), 0)
+
+          formattedDate = baseTime.toLocaleDateString()
+          console.log(`Row ${index + 1} parsed base time:`, baseTime.toISOString())
         } else {
-          console.error("Date regex did not match:", dateString)
-        }
-
-        // Extract time for start time
-        const timeRegex = /(\d+):(\d+):(\d+) ([ap]m)/i
-        const timeMatch = dateString.match(timeRegex)
-        if (timeMatch) {
-          const [_, hours, minutes, seconds, ampm] = timeMatch
-          startTime = `${hours}:${minutes} ${ampm.toUpperCase()}`
-
-          // Calculate load time (30 minutes before start time)
-          const startHour = Number.parseInt(hours)
-          const startMinute = Number.parseInt(minutes)
-
-          let loadHour = startHour
-          let loadMinute = startMinute - 30
-
-          if (loadMinute < 0) {
-            loadHour = loadHour - 1
-            loadMinute = loadMinute + 60
-          }
-
-          if (loadHour < 1) {
-            loadHour = 12 + loadHour
-          }
-
-          loadTime = `${loadHour.toString().padStart(2, "0")}:${loadMinute.toString().padStart(2, "0")} ${ampm.toUpperCase()}`
+          console.error(`Row ${index + 1} date regex did not match:`, dateString)
         }
       } catch (e) {
-        console.error("Error parsing date for row:", index, e, "date string:", row["Due Date"])
+        console.error(`Row ${index + 1} error parsing date:`, e, "date string:", row["Due Date"])
       }
     }
 
     // Create entries for each combination of truck number and pit location
-    truckNumbers.forEach((truckNumber) => {
+    truckNumbers.forEach((truckNumber, truckIndex) => {
       pitLocations.forEach((pitLocation) => {
+        // Calculate staggered time for this truck
+        const staggeredTime = new Date(
+          baseTime.getTime() - minutesBefore * 60000 + truckIndex * intervalBetween * 60000,
+        )
+        const driverKey = truckNumber.toUpperCase().trim()
+        const isOffsetDriver = applyOffsetTo.has(driverKey)
+
+        // Apply conditional timing logic
+        let startTime: string
+        let loadTime: string
+
+        if (isOffsetDriver) {
+          // For drivers in the offset list: startTime = staggered time, loadTime = startTime + 10 minutes
+          startTime = staggeredTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+          const loadDateTime = new Date(staggeredTime.getTime() + 10 * 60000)
+          loadTime = loadDateTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+        } else {
+          // For drivers not in the offset list: both times are the same (staggered time)
+          const timeString = staggeredTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+          startTime = timeString
+          loadTime = timeString
+        }
+
+        console.log(
+          `Row ${index + 1}, truck ${truckIndex + 1} (${truckNumber}): startTime=${startTime}, loadTime=${loadTime}, isOffset=${isOffsetDriver}`,
+        )
+
         // Extract the first 5 characters of the account number to add to the job name
         const accountPrefix = row["🫀 Account # (short text)"] ? row["🫀 Account # (short text)"].substring(0, 5) : ""
         const jobNameWithAccount = accountPrefix
@@ -233,7 +290,7 @@ function processDataRows(data: any[]): ReportData {
           date: formattedDate,
           quantity: row["QTY REQ'D (short text)"] || "",
           materials: row["Material Type (short text)"] || "",
-          location: row["Location (short text)"] || row["LOCATION (short text)"] || "",
+          location: row["LOCATION (short text)"] || "",
           accountNumber: row["🫀 Account # (short text)"] || "",
           pit: pitLocation,
           delivered: row["TOTAL # (formula)"] || "",
@@ -261,7 +318,11 @@ function processDataRows(data: any[]): ReportData {
           asphaltTrucks.push(entry)
           console.log(`Added entry to asphalt trucks: ${entry.jobName} (${entry.truckNumber}) at pit ${entry.pit}`)
         } else {
-          console.warn(`Unknown truck type: "${entry.truckType}" for job: ${entry.jobName}`)
+          // Default to dump trucks if truck type is unclear
+          dumpTrucks.push(entry)
+          console.log(
+            `Added entry to dump trucks (default): ${entry.jobName} (${entry.truckNumber}) at pit ${entry.pit}`,
+          )
         }
       })
     })

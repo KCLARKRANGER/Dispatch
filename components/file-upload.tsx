@@ -95,8 +95,22 @@ export function FileUpload() {
         details: `Processed ${result.totalEntries} entries for ${result.date}`,
       })
 
-      // Store the processed data in localStorage
-      localStorage.setItem("reportData", JSON.stringify(result.data))
+      // Store the processed data in localStorage with better error handling
+      try {
+        console.log("Storing report data in localStorage:", result.data)
+        localStorage.setItem("reportData", JSON.stringify(result.data))
+        console.log("Successfully stored data in localStorage")
+
+        // Verify the data was stored
+        const storedData = localStorage.getItem("reportData")
+        if (storedData) {
+          console.log("Verified data storage - found", JSON.parse(storedData).totalEntries, "entries")
+        } else {
+          console.error("Failed to verify localStorage storage")
+        }
+      } catch (storageError) {
+        console.error("Error storing data in localStorage:", storageError)
+      }
 
       toast({
         title: "Upload successful",
@@ -113,8 +127,11 @@ export function FileUpload() {
         fileInputRef.current.value = ""
       }
 
-      // Reload the page to show the new data
-      window.location.reload()
+      // Add a small delay before reload to ensure localStorage write completes
+      setTimeout(() => {
+        console.log("Reloading page to show new data")
+        window.location.reload()
+      }, 500)
     } catch (error) {
       clearInterval(interval)
       setIsUploading(false)
